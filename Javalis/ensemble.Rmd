@@ -1,0 +1,95 @@
+# PIBIC-FAPEMIG
+# Copyright (C) 2018/19  Universidade Federal de Uberlândia
+# 
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <http://www.gnu.org/licenses/>.
+
+---
+title: "Ensemble"
+output: html_notebook
+---
+
+```{r}
+require(pacman)
+p_load(R.matlab)
+p_load(tidyverse, caret, caretEnsemble)
+p_load(doMC)
+registerDoMC(cores=3)
+
+# Uncomment line below if reading csv file
+#dadosPre <- read_csv("DescritoresBackesOld/dados_DCT.csv", col_names=F)
+
+# Uncomment next two lines if reading MATLAB file
+dadosPre <- readMat("DescritoresBackesNew/dados_Mink3D_R20.mat")
+dadosPre <- as.data.frame(dadosPre)
+
+colnames(dadosPre)<-as.character(paste0("C",1:ncol(dadosPre)))
+
+# Uncomment next three lines if you want binary dataset (boar vs non-boar)
+dadosPre[, -1][dadosPre[, -1] == 1] <- "javali"
+dadosPre[, -1][dadosPre[, -1] == 2] <- "javali"
+dadosPre[, -1][dadosPre[, -1] == 3] <- "outro"
+dadosPre[, -1][dadosPre[, -1] == 4] <- "outro"
+
+dadosPre$C336 <- factor(dadosPre$C336)
+
+modeloDePreproc <- preProcess(dadosPre,method=c("nzv","scale","center"))
+
+dados <- as.data.frame(predict(modeloDePreproc,dadosPre))
+
+
+my_control <- trainControl(
+  method="boot",
+  number=25,
+  #repeats=3,
+  savePredictions="final",
+  classProbs=TRUE,
+  index=createResample(dados$C336, 25)
+  )
+
+#svmLinear <- train(dados$C9~., data=dados, method="svmLinearWeights", trControl=my_control)
+
+
+model_list <- caretList(
+  x=dados[, 1:335],
+  y=dados$C336,
+  trControl=my_control,
+  methodList=c("AdaBag", "bagEarth", "glmboost", "avNNet", "gbm", "rf")
+)
+
+greedy_ensemble <- caretEnsemble(
+  model_list,
+  metric="Accuracy",
+  trControl=trainControl(
+    number=2,
+    classProbs=TRUE
+    )
+)
+
+ensemble_stack <- caretStack(
+  model_list,
+  method="nnet",
+  metric="Accuracy",
+  trControl=trainControl(
+    number=10,
+    classProbs=TRUE
+    )
+)
+
+summary(greedy_ensemble)
+
+# comparaçao kappa
+summary(resamples(model_list))
+
+```
+
